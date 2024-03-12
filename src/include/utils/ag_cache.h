@@ -20,8 +20,6 @@
 #ifndef AG_AG_CACHE_H
 #define AG_AG_CACHE_H
 
-#include "postgres.h"
-
 // graph_cache_data contains the same fields that ag_graph catalog table has
 typedef struct graph_cache_data
 {
@@ -33,7 +31,6 @@ typedef struct graph_cache_data
 // label_cache_data contains the same fields that ag_label catalog table has
 typedef struct label_cache_data
 {
-    Oid oid;
     NameData name;
     Oid graph;
     int32 id;
@@ -47,7 +44,7 @@ graph_cache_data *search_graph_name_cache(const char *name);
 graph_cache_data *search_graph_namespace_cache(Oid namespace);
 label_cache_data *search_label_oid_cache(Oid oid);
 label_cache_data *search_label_name_graph_cache(const char *name, Oid graph);
-label_cache_data *search_label_graph_id_cache(Oid graph, int32 id);
+label_cache_data *search_label_graph_oid_cache(Oid graph, int32 id);
 label_cache_data *search_label_relation_cache(Oid relation);
 label_cache_data *search_label_seq_name_graph_cache(const char *name, Oid graph);
 

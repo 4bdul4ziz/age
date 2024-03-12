@@ -25,9 +25,7 @@
 
 #include "postgres.h"
 
-#include <math.h>
-
-#include "utils/builtins.h"
+#include "utils/float.h"
 #include "utils/ag_float8_supp.h"
 
 /*

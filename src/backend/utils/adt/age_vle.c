@@ -19,14 +19,12 @@
 
 #include "postgres.h"
 
-#include "catalog/pg_type.h"
+#include "common/hashfn.h"
 #include "funcapi.h"
 #include "utils/lsyscache.h"
 
 #include "utils/age_vle.h"
 #include "catalog/ag_graph.h"
-#include "utils/graphid.h"
-#include "utils/age_graphid_ds.h"
 #include "nodes/cypher_nodes.h"
 
 /* defines */
@@ -164,7 +162,7 @@ static VLE_local_context *get_cached_VLE_local_context(int64 vle_grammar_node_id
 
             /*
              * Clear (unlink) the previous context's next pointer, if needed.
-             * Also clear prev as we are at the end of avaiable cached contexts
+             * Also clear prev as we are at the end of available cached contexts
              * and just purging them off. Remember, this forms a loop that will
              * exit the while after purging.
              */
@@ -381,7 +379,7 @@ static bool is_an_edge_match(VLE_local_context *vlelctx, edge_entry *ee)
     property_it = agtype_iterator_init(agtc_edge_property);
 
     /* return the value of deep contains */
-    return agtype_deep_contains(&property_it, &constraint_it);
+    return agtype_deep_contains(&property_it, &constraint_it, false);
 }
 
 /*
@@ -421,7 +419,7 @@ static void free_VLE_local_context(VLE_local_context *vlelctx)
     /*
      * We need to free the contents of our stacks if the context is not dirty.
      * These stacks are created in a more volatile memory context. If the
-     * process was interupted, they will be garbage collected by PG. The only
+     * process was interrupted, they will be garbage collected by PG. The only
      * time we will ever clean them here is if the cache isn't being used.
      */
     if (vlelctx->is_dirty == false)

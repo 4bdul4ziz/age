@@ -41,8 +41,8 @@ CREATE FUNCTION call_stmt_test.add_agtype(agtype, agtype) RETURNS agtype
     LANGUAGE SQL
     IMMUTABLE
     RETURNS NULL ON NULL INPUT;
-/* 
- * CALL (solo) 
+/*
+ * CALL (solo)
  */
 SELECT * FROM cypher('cypher_call', $$CALL sqrt(64)$$) as (sqrt agtype);
  sqrt 
@@ -75,7 +75,7 @@ SELECT * FROM cypher('cypher_call', $$CALL call_stmt_test.add_agtype(1,2)$$) as 
  3
 (1 row)
 
-/* non-existent schema should fail */
+/* nonexistent schema should fail */
 SELECT * FROM cypher('cypher_call', $$CALL ag_catalog.add_agtype(1,2)$$) as (sqrt agtype);
 ERROR:  function ag_catalog.add_agtype(agtype, agtype) does not exist
 LINE 2: ...cypher('cypher_call', $$CALL ag_catalog.add_agtype(1,2)$$) a...
@@ -84,8 +84,8 @@ HINT:  No function matches the given name and argument types. You might need to 
 /* CALL YIELD WHERE, should fail */
 SELECT * FROM cypher('cypher_call', $$CALL sqrt(64) YIELD sqrt WHERE sqrt > 1$$) as (sqrt agtype);
 ERROR:  Cannot use standalone CALL with WHERE
-LINE 2: ...r('cypher_call', $$CALL sqrt(64) YIELD sqrt WHERE sqrt > 1$$...
-                                                             ^
+LINE 2: SELECT * FROM cypher('cypher_call', $$CALL sqrt(64) YIELD sq...
+                                             ^
 HINT:  Instead use `CALL ... WITH * WHERE ... RETURN *`
 /*
  * subquery

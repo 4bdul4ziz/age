@@ -19,19 +19,18 @@
 
 #include "postgres.h"
 
+#include "access/heapam.h"
 #include "catalog/namespace.h"
+#include "common/hashfn.h"
+#include "commands/label_commands.h"
+#include "utils/datum.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
-#include "utils/rel.h"
 #include "utils/snapmgr.h"
-#include "commands/label_commands.h"
 
 #include "utils/age_global_graph.h"
-#include "utils/agtype.h"
 #include "catalog/ag_graph.h"
 #include "catalog/ag_label.h"
-#include "utils/graphid.h"
-#include "utils/age_graphid_ds.h"
 
 /* defines */
 #define VERTEX_HTAB_NAME "Vertex to edge lists " /* added a space at end for */
@@ -41,7 +40,7 @@
 
 /* internal data structures implementation */
 
-/* vertex entry for the vertex_hastable */
+/* vertex entry for the vertex_hashtable */
 typedef struct vertex_entry
 {
     graphid vertex_id;             /* vertex id, it is also the hash key */
@@ -110,7 +109,7 @@ static bool insert_vertex_entry(GRAPH_global_context *ggctx, graphid vertex_id,
 
 /*
  * Helper function to determine validity of the passed GRAPH_global_context.
- * This is based off of the current active snaphot, to see if the graph could
+ * This is based off of the current active snapshot, to see if the graph could
  * have been modified. Ideally, we should find a way to more accurately know
  * whether the particular graph was modified.
  */
@@ -189,7 +188,7 @@ static List *get_ag_labels_names(Snapshot snapshot, Oid graph_oid,
     List *labels = NIL;
     ScanKeyData scan_keys[2];
     Relation ag_label;
-    HeapScanDesc scan_desc;
+    TableScanDesc scan_desc;
     HeapTuple tuple;
     TupleDesc tupdesc;
 
@@ -203,8 +202,8 @@ static List *get_ag_labels_names(Snapshot snapshot, Oid graph_oid,
                 F_CHAREQ, CharGetDatum(label_type));
 
     /* setup the table to be scanned, ag_label in this case */
-    ag_label = heap_open(ag_label_relation_id(), ShareLock);
-    scan_desc = heap_beginscan(ag_label, snapshot, 2, scan_keys);
+    ag_label = table_open(ag_label_relation_id(), ShareLock);
+    scan_desc = table_beginscan(ag_label, snapshot, 2, scan_keys);
 
     /* get the tupdesc - we don't need to release this one */
     tupdesc = RelationGetDescr(ag_label);
@@ -228,8 +227,8 @@ static List *get_ag_labels_names(Snapshot snapshot, Oid graph_oid,
     }
 
     /* close up scan */
-    heap_endscan(scan_desc);
-    heap_close(ag_label, ShareLock);
+    table_endscan(scan_desc);
+    table_close(ag_label, ShareLock);
 
     return labels;
 }
@@ -399,7 +398,7 @@ static void load_vertex_hashtable(GRAPH_global_context *ggctx)
     foreach (lc, vertex_label_names)
     {
         Relation graph_vertex_label;
-        HeapScanDesc scan_desc;
+        TableScanDesc scan_desc;
         HeapTuple tuple;
         char *vertex_label_name;
         Oid vertex_label_table_oid;
@@ -411,8 +410,8 @@ static void load_vertex_hashtable(GRAPH_global_context *ggctx)
         vertex_label_table_oid = get_relname_relid(vertex_label_name,
                                                    graph_namespace_oid);
         /* open the relation (table) and begin the scan */
-        graph_vertex_label = heap_open(vertex_label_table_oid, ShareLock);
-        scan_desc = heap_beginscan(graph_vertex_label, snapshot, 0, NULL);
+        graph_vertex_label = table_open(vertex_label_table_oid, ShareLock);
+        scan_desc = table_beginscan(graph_vertex_label, snapshot, 0, NULL);
         /* get the tupdesc - we don't need to release this one */
         tupdesc = RelationGetDescr(graph_vertex_label);
         /* bail if the number of columns differs */
@@ -438,6 +437,8 @@ static void load_vertex_hashtable(GRAPH_global_context *ggctx)
             /* get the vertex properties datum */
             vertex_properties = column_get_datum(tupdesc, tuple, 1,
                                                  "properties", AGTYPEOID, true);
+            /* we need to make a copy of the properties datum */
+            vertex_properties = datumCopy(vertex_properties, false, -1);
 
             /* insert vertex into vertex hashtable */
             inserted = insert_vertex_entry(ggctx, vertex_id,
@@ -452,8 +453,8 @@ static void load_vertex_hashtable(GRAPH_global_context *ggctx)
         }
 
         /* end the scan and close the relation */
-        heap_endscan(scan_desc);
-        heap_close(graph_vertex_label, ShareLock);
+        table_endscan(scan_desc);
+        table_close(graph_vertex_label, ShareLock);
     }
 }
 
@@ -498,7 +499,7 @@ static void load_edge_hashtable(GRAPH_global_context *ggctx)
     foreach (lc, edge_label_names)
     {
         Relation graph_edge_label;
-        HeapScanDesc scan_desc;
+        TableScanDesc scan_desc;
         HeapTuple tuple;
         char *edge_label_name;
         Oid edge_label_table_oid;
@@ -510,8 +511,8 @@ static void load_edge_hashtable(GRAPH_global_context *ggctx)
         edge_label_table_oid = get_relname_relid(edge_label_name,
                                                  graph_namespace_oid);
         /* open the relation (table) and begin the scan */
-        graph_edge_label = heap_open(edge_label_table_oid, ShareLock);
-        scan_desc = heap_beginscan(graph_edge_label, snapshot, 0, NULL);
+        graph_edge_label = table_open(edge_label_table_oid, ShareLock);
+        scan_desc = table_beginscan(graph_edge_label, snapshot, 0, NULL);
         /* get the tupdesc - we don't need to release this one */
         tupdesc = RelationGetDescr(graph_edge_label);
         /* bail if the number of columns differs */
@@ -551,6 +552,9 @@ static void load_edge_hashtable(GRAPH_global_context *ggctx)
             edge_properties = column_get_datum(tupdesc, tuple, 3, "properties",
                                                AGTYPEOID, true);
 
+            /* we need to make a copy of the properties datum */
+            edge_properties = datumCopy(edge_properties, false, -1);
+
             /* insert edge into edge hashtable */
             inserted = insert_edge(ggctx, edge_id, edge_properties,
                                    edge_vertex_start_id, edge_vertex_end_id,
@@ -573,8 +577,8 @@ static void load_edge_hashtable(GRAPH_global_context *ggctx)
         }
 
         /* end the scan and close the relation */
-        heap_endscan(scan_desc);
-        heap_close(graph_edge_label, ShareLock);
+        table_endscan(scan_desc);
+        table_close(graph_edge_label, ShareLock);
     }
 }
 

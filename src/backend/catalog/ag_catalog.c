@@ -27,10 +27,8 @@
 #include "tcop/utility.h"
 #include "utils/lsyscache.h"
 
-#include "catalog/ag_catalog.h"
 #include "catalog/ag_graph.h"
 #include "catalog/ag_label.h"
-#include "catalog/ag_namespace.h"
 #include "utils/ag_cache.h"
 
 static object_access_hook_type prev_object_access_hook;
@@ -39,10 +37,10 @@ static bool prev_object_hook_is_set;
 
 static void object_access(ObjectAccessType access, Oid class_id, Oid object_id,
                           int sub_id, void *arg);
-void ag_ProcessUtility_hook(PlannedStmt *pstmt, const char *queryString,
+void ag_ProcessUtility_hook(PlannedStmt *pstmt, const char *queryString, bool readOnlyTree,
                             ProcessUtilityContext context, ParamListInfo params,
                             QueryEnvironment *queryEnv, DestReceiver *dest,
-                            char *completionTag);
+                            QueryCompletion *qc);
 
 static bool is_age_drop(PlannedStmt *pstmt);
 static void drop_age_extension(DropStmt *stmt);
@@ -87,18 +85,28 @@ void process_utility_hook_fini(void)
  * the extension.
  */
 void ag_ProcessUtility_hook(PlannedStmt *pstmt, const char *queryString,
-                             ProcessUtilityContext context, ParamListInfo params,
-                             QueryEnvironment *queryEnv, DestReceiver *dest,
-                             char *completionTag)
+                            bool readOnlyTree, ProcessUtilityContext context,
+                            ParamListInfo params, QueryEnvironment *queryEnv,
+                            DestReceiver *dest, QueryCompletion *qc)
 {
     if (is_age_drop(pstmt))
+    {
         drop_age_extension((DropStmt *)pstmt->utilityStmt);
+    }
     else if (prev_process_utility_hook)
-        (*prev_process_utility_hook) (pstmt, queryString, context, params,
-                                      queryEnv, dest, completionTag);
+    {
+        (*prev_process_utility_hook) (pstmt, queryString, readOnlyTree, context,
+                                      params, queryEnv, dest, qc);
+    }
     else
-        standard_ProcessUtility(pstmt, queryString, context, params, queryEnv,
-                                dest, completionTag);
+    {
+        Assert(IsA(pstmt, PlannedStmt));
+        Assert(pstmt->commandType == CMD_UTILITY);
+        Assert(queryString != NULL);	/* required as of 8.4 */
+        Assert(qc == NULL || qc->commandTag == CMDTAG_UNKNOWN);
+        standard_ProcessUtility(pstmt, queryString, readOnlyTree, context,
+                                params, queryEnv, dest, qc);
+    }
 }
 
 static void drop_age_extension(DropStmt *stmt)
@@ -137,8 +145,8 @@ static bool is_age_drop(PlannedStmt *pstmt)
 
         if (IsA(obj, String))
         {
-            Value *val = (Value *)obj;
-            char *str = val->val.str;
+            String *val = (String *)obj;
+            char *str = val->sval;
 
             if (!pg_strcasecmp(str, "age"))
                 return true;

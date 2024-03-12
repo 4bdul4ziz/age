@@ -24,23 +24,32 @@
 #include "nodes/cypher_readfuncs.h"
 #include "nodes/cypher_nodes.h"
 
+static char *nullable_string(const char *token, int length);
 /*
  * Copied From Postgres
  *
  * Macros for declaring appropriate local variables.
  */
-// Declare the extensible node and local fields for the pg_strtok
+/* A few guys need only local_node */
+#define READ_LOCALS_NO_FIELDS(nodeTypeName) \
+    nodeTypeName *local_node = (nodeTypeName *) node
+
+/* And a few guys need only the pg_strtok support fields */
+#define READ_TEMP_LOCALS() \
+    const char *token; \
+    int length
+
+/* ... but most need both */
 #define READ_LOCALS(nodeTypeName) \
-        nodeTypeName *local_node = (nodeTypeName *)node; \
-        char *token; \
-        int  length;
+    READ_LOCALS_NO_FIELDS(nodeTypeName); \
+    READ_TEMP_LOCALS()
 
 /*
- * The READ_*_FIELD defines first skips the :fildname token (key) part of the string
+ * The READ_*_FIELD defines first skips the :fldname token (key) part of the string
  * and then converts the next token (value) to the correct data type.
  *
  * pg_strtok will split the passed string by whitespace, skipping whitespace in
- * strings. We do not setup pg_strtok. That is for the the caller to do. By default
+ * strings. We do not setup pg_strtok. That is for the caller to do. By default
  * that is the responsibility of Postgres' nodeRead function. We assume that was setup
  * correctly.
  */
@@ -49,7 +58,7 @@
 #define READ_INT_FIELD(fldname) \
         token = pg_strtok(&length); \
         token = pg_strtok(&length); \
-        local_node->fldname = atoi(token)
+        local_node->fldname = strtol(token, 0, 10)
 
 // Read an unsigned integer field (anything written as ":fldname %u")
 #define READ_UINT_FIELD(fldname) \
@@ -85,7 +94,7 @@
 #define READ_ENUM_FIELD(fldname, enumtype) \
         token = pg_strtok(&length); \
         token = pg_strtok(&length); \
-        local_node->fldname = (enumtype) atoi(token)
+        local_node->fldname = (enumtype) strtol(token, 0, 10)
 
 // Read a float field
 #define READ_FLOAT_FIELD(fldname) \
@@ -103,7 +112,7 @@
 #define READ_STRING_FIELD(fldname) \
         token = pg_strtok(&length); \
         token = pg_strtok(&length); \
-        local_node->fldname = non_nullable_string(token, length)
+        local_node->fldname = nullable_string(token, length)
 
 // Read a parse location field (and throw away the value, per notes above)
 #define READ_LOCATION_FIELD(fldname) \
@@ -154,11 +163,22 @@
 
 #define strtobool(x)  ((*(x) == 't') ? true : false)
 
-#define nullable_string(token,length)  \
-        ((length) == 0 ? NULL : debackslash(token, length))
-
-#define non_nullable_string(token,length)  \
-        ((length) == 0 ? "" : debackslash(token, length))
+/* copied from PG16 function of the same name for consistency */
+static char *nullable_string(const char *token, int length)
+{
+    /* outToken emits <> for NULL, and pg_strtok makes that an empty string */
+    if (length == 0)
+    {
+        return NULL;
+    }
+    /* outToken emits "" for empty string */
+    if (length == 2 && token[0] == '"' && token[1] == '"')
+    {
+        return pstrdup("");
+    }
+    /* otherwise, we must remove protective backslashes added by outToken */
+    return debackslash(token, length);
+}
 
 /*
  * Default read function for cypher nodes. For most nodes, we don't expect
@@ -178,8 +198,8 @@ void read_cypher_create_target_nodes(struct ExtensibleNode *node)
     READ_LOCALS(cypher_create_target_nodes);
 
     READ_NODE_FIELD(paths);
-    READ_INT_FIELD(flags);
-    READ_OID_FIELD(graph_oid);
+    READ_UINT_FIELD(flags);
+    READ_UINT_FIELD(graph_oid);
 }
 
 /*
@@ -204,7 +224,7 @@ void read_cypher_target_node(struct ExtensibleNode *node)
     READ_LOCALS(cypher_target_node);
 
     READ_CHAR_FIELD(type);
-    READ_INT_FIELD(flags);
+    READ_UINT_FIELD(flags);
     READ_ENUM_FIELD(dir, cypher_rel_dir);
     READ_NODE_FIELD(id_expr);
     READ_NODE_FIELD(id_expr_state);
@@ -228,7 +248,7 @@ void read_cypher_update_information(struct ExtensibleNode *node)
     READ_LOCALS(cypher_update_information);
 
     READ_NODE_FIELD(set_items);
-    READ_INT_FIELD(flags);
+    READ_UINT_FIELD(flags);
     READ_INT_FIELD(tuple_position);
     READ_STRING_FIELD(graph_name);
     READ_STRING_FIELD(clause_name);
@@ -260,9 +280,9 @@ void read_cypher_delete_information(struct ExtensibleNode *node)
     READ_LOCALS(cypher_delete_information);
 
     READ_NODE_FIELD(delete_items);
-    READ_INT_FIELD(flags);
+    READ_UINT_FIELD(flags);
     READ_STRING_FIELD(graph_name);
-    READ_OID_FIELD(graph_oid);
+    READ_UINT_FIELD(graph_oid);
     READ_BOOL_FIELD(detach);
 }
 
@@ -286,8 +306,8 @@ void read_cypher_merge_information(struct ExtensibleNode *node)
 {
     READ_LOCALS(cypher_merge_information);
 
-    READ_INT_FIELD(flags);
-    READ_OID_FIELD(graph_oid);
+    READ_UINT_FIELD(flags);
+    READ_UINT_FIELD(graph_oid);
     READ_INT_FIELD(merge_function_attr);
     READ_NODE_FIELD(path);
 }

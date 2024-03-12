@@ -19,11 +19,8 @@
 
 #include "postgres.h"
 
-#include "common/keywords.h"
-#include "nodes/pg_list.h"
 #include "parser/scansup.h"
 
-#include "parser/ag_scanner.h"
 #include "parser/cypher_gram.h"
 #include "parser/cypher_keywords.h"
 #include "parser/cypher_parser.h"
@@ -47,7 +44,13 @@ int cypher_yylex(YYSTYPE *lvalp, YYLTYPE *llocp, ag_scanner_t scanner)
         DOT_DOT,
         TYPECAST,
         PLUS_EQ,
-        EQ_TILDE
+        EQ_TILDE,
+        LEFT_CONTAINS,
+        RIGHT_CONTAINS,
+        ACCESS_PATH,
+        ANY_EXISTS,
+        ALL_EXISTS,
+        CONCAT
     };
 
     ag_token token;
@@ -67,20 +70,22 @@ int cypher_yylex(YYSTYPE *lvalp, YYLTYPE *llocp, ag_scanner_t scanner)
         break;
     case AG_TOKEN_IDENTIFIER:
     {
-        const ScanKeyword *keyword;
+        int kwnum;
         char *ident;
 
-        keyword = ScanKeywordLookup(token.value.s, cypher_keywords,
-                                    num_cypher_keywords);
-        if (keyword)
+        kwnum = ScanKeywordLookup(token.value.s, &CypherKeyword);
+        if (kwnum >= 0)
         {
             /*
              * use token.value.s instead of keyword->name to preserve
              * case sensitivity
              */
-            lvalp->keyword = token.value.s;
+            lvalp->keyword = GetScanKeyword(kwnum, &CypherKeyword);
+            ident = pstrdup(token.value.s);
+            truncate_identifier(ident, strlen(ident), true);
+            lvalp->string = ident;
             *llocp = token.location;
-            return keyword->value;
+            return CypherKeywordTokens[kwnum];
         }
 
         ident = pstrdup(token.value.s);
@@ -97,6 +102,12 @@ int cypher_yylex(YYSTYPE *lvalp, YYLTYPE *llocp, ag_scanner_t scanner)
     case AG_TOKEN_DOT_DOT:
     case AG_TOKEN_PLUS_EQ:
     case AG_TOKEN_EQ_TILDE:
+    case AG_TOKEN_ACCESS_PATH:
+    case AG_TOKEN_ALL_EXISTS:
+    case AG_TOKEN_ANY_EXISTS:
+    case AG_TOKEN_LEFT_CONTAINS:
+    case AG_TOKEN_RIGHT_CONTAINS:
+    case AG_TOKEN_CONCAT:
         break;
     case AG_TOKEN_TYPECAST:
         break;
@@ -145,7 +156,7 @@ List *parse_cypher(const char *s)
         return NIL;
 
     /*
-     * Append the extra node node regardless of its value. Currently the extra
+     * Append the extra node regardless of its value. Currently the extra
      * node is only used by EXPLAIN
     */
     return lappend(extra.result, extra.extra);

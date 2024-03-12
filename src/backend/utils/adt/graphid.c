@@ -19,7 +19,6 @@
 
 #include "postgres.h"
 
-#include "fmgr.h"
 #include "utils/builtins.h"
 #include "utils/sortsupport.h"
 
@@ -36,7 +35,8 @@ Oid get_GRAPHIDOID(void)
 {
     if (g_GRAPHIDOID == InvalidOid)
     {
-        g_GRAPHIDOID = GetSysCacheOid2(TYPENAMENSP, CStringGetDatum("graphid"),
+        g_GRAPHIDOID = GetSysCacheOid2(TYPENAMENSP, Anum_pg_type_oid,
+                                       CStringGetDatum("graphid"),
                                        ObjectIdGetDatum(ag_catalog_namespace_id()));
     }
 
@@ -48,7 +48,7 @@ Oid get_GRAPHIDARRAYOID(void)
 {
     if (g_GRAPHIDARRAYOID == InvalidOid)
     {
-        g_GRAPHIDARRAYOID = GetSysCacheOid2(TYPENAMENSP,
+        g_GRAPHIDARRAYOID = GetSysCacheOid2(TYPENAMENSP, Anum_pg_type_oid,
                                             CStringGetDatum("_graphid"),
                                             ObjectIdGetDatum(ag_catalog_namespace_id()));
     }

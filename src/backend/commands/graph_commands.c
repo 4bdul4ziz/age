@@ -19,30 +19,17 @@
 
 #include "postgres.h"
 
-#include "access/xact.h"
 #include "access/genam.h"
 #include "access/heapam.h"
-#include "catalog/dependency.h"
-#include "catalog/objectaddress.h"
-#include "commands/defrem.h"
 #include "commands/schemacmds.h"
 #include "commands/tablecmds.h"
-#include "fmgr.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
-#include "nodes/nodes.h"
-#include "nodes/parsenodes.h"
-#include "nodes/pg_list.h"
-#include "nodes/value.h"
 #include "parser/parser.h"
-#include "utils/fmgroids.h"
-#include "utils/relcache.h"
-#include "utils/rel.h"
 
 #include "catalog/ag_graph.h"
 #include "catalog/ag_label.h"
 #include "commands/label_commands.h"
-#include "utils/graphid.h"
 #include "utils/name_validation.h"
 
 /*
@@ -149,7 +136,7 @@ static Oid create_schema_for_graph(const Name graph_name)
     integer = SystemTypeName("int4");
     data_type = makeDefElem("as", (Node *)integer, -1);
     maxvalue = makeDefElem("maxvalue", (Node *)makeInteger(LABEL_ID_MAX), -1);
-    cycle = makeDefElem("cycle", (Node *)makeInteger(true), -1);
+    cycle = makeDefElem("cycle", (Node *)makeBoolean(true), -1);
     seq_stmt->options = list_make3(data_type, maxvalue, cycle);
     seq_stmt->ownerId = InvalidOid;
     seq_stmt->for_identity = false;
@@ -182,9 +169,8 @@ Datum drop_graph(PG_FUNCTION_ARGS)
     graph_name_str = NameStr(*graph_name);
     if (!graph_exists(graph_name_str))
     {
-        ereport(ERROR,
-                (errcode(ERRCODE_UNDEFINED_SCHEMA),
-                 errmsg("graph \"%s\" does not exist", graph_name_str)));
+        ereport(ERROR, (errcode(ERRCODE_UNDEFINED_SCHEMA),
+                        errmsg("graph \"%s\" does not exist", graph_name_str)));
     }
 
     drop_schema_for_graph(graph_name_str, cascade);
@@ -200,7 +186,7 @@ Datum drop_graph(PG_FUNCTION_ARGS)
 static void drop_schema_for_graph(char *graph_name_str, const bool cascade)
 {
     DropStmt *drop_stmt;
-    Value *schema_name;
+    String *schema_name;
     List *label_id_seq_name;
     DropBehavior behavior;
 
@@ -367,11 +353,11 @@ List *get_graphnames(void)
     List *graphnames = NIL;
     char *str;
 
-    ag_graph = heap_open(ag_graph_relation_id(), RowExclusiveLock);
+    ag_graph = table_open(ag_graph_relation_id(), RowExclusiveLock);
     scan_desc = systable_beginscan(ag_graph, ag_graph_name_index_id(), true,
                                    NULL, 0, NULL);
 
-    slot = MakeTupleTableSlot(RelationGetDescr(ag_graph));
+    slot = MakeTupleTableSlot(RelationGetDescr(ag_graph), &TTSOpsHeapTuple);
 
     for (;;)
     {
@@ -380,17 +366,17 @@ List *get_graphnames(void)
             break;
 
         ExecClearTuple(slot);
-        ExecStoreTuple(tuple, slot, InvalidBuffer, false);
+        ExecStoreHeapTuple(tuple, slot, false);
 
         slot_getallattrs(slot);
 
-        str = DatumGetCString(slot->tts_values[0]);
+        str = DatumGetCString(slot->tts_values[Anum_ag_graph_name - 1]);
         graphnames = lappend(graphnames, str);
     }
 
     ExecDropSingleTupleTableSlot(slot);
     systable_endscan(scan_desc);
-    heap_close(ag_graph, RowExclusiveLock);
+    table_close(ag_graph, RowExclusiveLock);
 
     return graphnames;
 }

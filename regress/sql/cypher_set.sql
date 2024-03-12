@@ -64,6 +64,21 @@ $$) AS (a agtype);
 
 SELECT * FROM cypher('cypher_set', $$
         MATCH (n {j: 5})
+        SET n.y = 53
+        SET n.y = 50
+        SET n.z = 99
+        SET n.arr = [n.y, n.z]
+        RETURN n
+$$) AS (a agtype);
+
+SELECT * FROM cypher('cypher_set', $$
+        MATCH (n {j: 5})
+        REMOVE n.arr
+        RETURN n
+$$) AS (a agtype);
+
+SELECT * FROM cypher('cypher_set', $$
+        MATCH (n {j: 5})
         RETURN n
 $$) AS (a agtype);
 
@@ -96,6 +111,32 @@ SELECT * FROM cypher('cypher_set', $$
         RETURN n
 $$) AS (a agtype);
 
+-- Test that SET works with nodes(path) and relationships(path)
+
+SELECT * FROM cypher('cypher_set', $$
+        MATCH p=(n)-[e:e {j:34}]->()
+        WITH nodes(p) AS ns
+        WITH ns[0] AS n
+        SET n.k = 99
+        SET n.k = 999
+        RETURN n
+$$) AS (a agtype);
+
+SELECT * FROM cypher('cypher_set', $$
+        MATCH p=(n)-[e:e {j:34}]->()
+        WITH relationships(p) AS rs
+        WITH rs[0] AS r
+        SET r.l = 99
+        SET r.l = 999
+        RETURN r
+$$) AS (a agtype);
+
+SELECT * FROM cypher('cypher_set', $$
+        MATCH p=(n)-[e:e {j:34}]->()
+        REMOVE n.k, e.l
+        RETURN p
+$$) AS (a agtype);
+
 SELECT * FROM cypher('cypher_set', $$MATCH (n)-[]->(n) SET n.y = 99 RETURN n$$) AS (a agtype);
 
 SELECT * FROM cypher('cypher_set', $$MATCH (n) MATCH (n)-[]->(m) SET n.t = 150 RETURN n$$) AS (a agtype);
@@ -126,7 +167,7 @@ SELECT set_test();
 SELECT set_test();
 
 --
--- Updating multiple fieds
+-- Updating multiple fields
 --
 SELECT * FROM cypher('cypher_set', $$MATCH (n) SET n.i = 3, n.j = 5 RETURN n $$) AS (a agtype);
 
@@ -219,6 +260,7 @@ SELECT * FROM cypher('cypher_set_1', $$ CREATE (a:Kevin {name:'Kevin', age:32, h
 SELECT * FROM cypher('cypher_set_1', $$ CREATE (a:Matt {name:'Matt', city:'Toronto'}) $$) AS (a agtype);
 SELECT * FROM cypher('cypher_set_1', $$ CREATE (a:Juan {name:'Juan', role:'admin'}) $$) AS (a agtype);
 SELECT * FROM cypher('cypher_set_1', $$ CREATE (a:Robert {name:'Robert', role:'manager', city:'London'}) $$) AS (a agtype);
+SELECT * FROM cypher('cypher_set_1',$$ CREATE (a: VertexA {map: {a: 1, b: {c: 2, d: []}, c: [{d: -100, e: []}]}, list: [1, "string", [{a: []}, [[1, 2]]]], bool: true, num: -1.9::numeric, str: "string"})$$) as (a agtype);
 
 -- test copying properties between entities
 SELECT * FROM cypher('cypher_set_1', $$
@@ -247,7 +289,7 @@ SELECT * FROM cypher('cypher_set_1', $$
     RETURN p
 $$) AS (p agtype);
 
--- test assigning non-map to an enitity
+-- test assigning non-map to an entity
 SELECT * FROM cypher('cypher_set_1', $$
     MATCH (p {name: 'Peter'})
     SET p = "Peter"
@@ -275,6 +317,68 @@ SELECT * FROM cypher('cypher_set_1', $$
     RETURN p
 $$) AS (p agtype);
 
+-- test plus-equal with original properties having non-scalar values
+SELECT * FROM cypher('cypher_set_1', $$
+    MATCH (p {map: {}})
+    SET p += {json: {a: -1, b: ['a', -1, true], c: {d: 'string'}}}
+    RETURN p
+$$) AS (p agtype);
+
+SELECT * FROM cypher('cypher_set_1', $$
+    MATCH (p: VertexA {map: {}})
+    SET p += {list_upd: [1, 2, 3, 4, 5]}
+    RETURN p
+$$) AS (p agtype);
+
+SELECT * FROM cypher('cypher_set_1', $$
+    MATCH (p: VertexA)
+    SET p += {vertex: {id: 281474976710659, label: "", properties: {a: 1, b: [1, 2, 3]}}::vertex}
+    RETURN p
+$$) AS (p agtype);
+
+SELECT * FROM cypher('cypher_set_1', $$
+    MATCH (p {map: {}})
+    SET p += {}
+    RETURN p
+$$) AS (p agtype);
+
+--
+-- Check passing mismatched types with SET
+-- Issue 899
+--
+SELECT * FROM cypher('cypher_set_1', $$
+    CREATE (x) SET x.n0 = (true OR true) RETURN x
+$$) AS (p agtype);
+
+SELECT * FROM cypher('cypher_set_1', $$
+    CREATE (x) SET x.n0 = (true OR false), x.n1 = (false AND false), x.n2 = (false = false) RETURN x
+$$) AS (p agtype);
+
+--
+-- Issue 1634: Setting all properties with map object causes error
+--
+SELECT * FROM create_graph('issue_1634');
+
+-- this did not work and was fixed
+SELECT * FROM cypher('issue_1634', $$ WITH {first: 'jon', last: 'snow'} AS map
+                                      MERGE (v:PERSION {id: '1'})
+                                      SET v=map
+                                      RETURN v,map $$) as (v agtype, map agtype);
+
+-- these 2 did work and are added as extra tests
+SELECT * FROM cypher('issue_1634', $$ MATCH (u) DELETE (u) $$) AS (u agtype);
+SELECT * FROM cypher('issue_1634', $$ WITH {first: 'jon', last: 'snow'} AS map
+                                      MERGE (v:PERSION {id: '1'})
+                                      SET v.first=map.first, v.last=map.last
+                                      RETURN v,map $$) as (v agtype, map agtype);
+
+SELECT * FROM cypher('issue_1634', $$ MATCH (u) DELETE (u) $$) AS (u agtype);
+SELECT * FROM cypher('issue_1634', $$ MERGE (v:PERSION {id: '1'})
+                                      SET v={first: 'jon', last: 'snow'}
+                                      RETURN v $$) as (v agtype);
+
+SELECT * FROM cypher('issue_1634', $$ MATCH (u) DELETE (u) $$) AS (u agtype);
+
 --
 -- Clean up
 --
@@ -282,6 +386,8 @@ DROP TABLE tbl;
 DROP FUNCTION set_test;
 SELECT drop_graph('cypher_set', true);
 SELECT drop_graph('cypher_set_1', true);
+SELECT drop_graph('issue_1634', true);
 
 --
-
+-- End
+--

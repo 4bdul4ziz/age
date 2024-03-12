@@ -20,15 +20,9 @@
 #ifndef AG_CYPHER_NODE_H
 #define AG_CYPHER_NODE_H
 
-#include "postgres.h"
-
-#include "nodes/extensible.h"
-#include "nodes/parsenodes.h"
-#include "nodes/pg_list.h"
-
 #include "nodes/ag_nodes.h"
 
-/* cypher sub patterns */
+/* cypher sub patterns/queries */
 typedef enum csp_kind
 {
         CSP_EXISTS,
@@ -42,6 +36,13 @@ typedef struct cypher_sub_pattern
         csp_kind kind;
         List *pattern;
 } cypher_sub_pattern;
+
+typedef struct cypher_sub_query
+{
+        ExtensibleNode extensible;
+        csp_kind kind;
+        List *query;
+} cypher_sub_query;
 
 /*
  * clauses
@@ -116,6 +117,10 @@ typedef struct cypher_unwind
 {
     ExtensibleNode extensible;
     ResTarget *target;
+
+    /* for list comprehension */
+    Node *where;
+    Node *collect;
 } cypher_unwind;
 
 typedef struct cypher_merge
@@ -133,6 +138,7 @@ typedef struct cypher_path
     ExtensibleNode extensible;
     List *path; // [ node ( , relationship , node , ... ) ]
     char *var_name;
+    char *parsed_var_name;
     int location;
 } cypher_path;
 
@@ -141,7 +147,10 @@ typedef struct cypher_node
 {
     ExtensibleNode extensible;
     char *name;
+    char *parsed_name;
     char *label;
+    char *parsed_label;
+    bool use_equals;
     Node *props; // map or parameter
     int location;
 } cypher_node;
@@ -158,7 +167,10 @@ typedef struct cypher_relationship
 {
     ExtensibleNode extensible;
     char *name;
+    char *parsed_name;
     char *label;
+    char *parsed_label;
+    bool use_equals;
     Node *props; // map or parameter
     Node *varlen; // variable length relationships (A_Indices)
     cypher_rel_dir dir;
@@ -226,7 +238,7 @@ typedef struct cypher_create_target_nodes
     ExtensibleNode extensible;
     List *paths;
     uint32 flags;
-    Oid graph_oid;
+    uint32 graph_oid;
 } cypher_create_target_nodes;
 
 typedef struct cypher_create_path
@@ -236,6 +248,29 @@ typedef struct cypher_create_path
     AttrNumber path_attr_num;
     char *var_name;
 } cypher_create_path;
+
+/*
+ * comparison expressions
+ */
+
+typedef struct cypher_comparison_aexpr
+{
+    ExtensibleNode extensible;
+    A_Expr_Kind kind; /* see above */
+    List *name; /* possibly-qualified name of operator */
+    Node *lexpr; /* left argument, or NULL if none */
+    Node *rexpr; /* right argument, or NULL if none */
+    int location; /* token location, or -1 if unknown */
+} cypher_comparison_aexpr;
+
+typedef struct cypher_comparison_boolexpr
+{
+    ExtensibleNode extensible;
+    BoolExprType boolop;
+    List       *args;           /* arguments to this expression */
+    int         location;       /* token location, or -1 if unknown */
+} cypher_comparison_boolexpr;
+
 
 /*
  * procedure call
@@ -360,7 +395,7 @@ typedef struct cypher_update_information
 {
     ExtensibleNode extensible;
     List *set_items;
-    int flags;
+    uint32 flags;
     AttrNumber tuple_position;
     char *graph_name;
     char *clause_name;
@@ -382,24 +417,24 @@ typedef struct cypher_delete_information
 {
     ExtensibleNode extensible;
     List *delete_items;
-    int flags;
+    uint32 flags;
     char *graph_name;
-    Oid graph_oid;
+    uint32 graph_oid;
     bool detach;
 } cypher_delete_information;
 
 typedef struct cypher_delete_item
 {
     ExtensibleNode extensible;
-    Value *entity_position;
+    Integer *entity_position;
     char *var_name;
 } cypher_delete_item;
 
 typedef struct cypher_merge_information
 {
     ExtensibleNode extensible;
-    int flags;
-    Oid graph_oid;
+    uint32 flags;
+    uint32 graph_oid;
     AttrNumber merge_function_attr;
     cypher_create_path *path;
 } cypher_merge_information;
